@@ -1,8 +1,8 @@
 package vsop87_test
 
 import (
-	"fmt"
 	"io/ioutil"
+	"math"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -62,42 +62,39 @@ func TestChk(t *testing.T) {
 		ln++
 		if len(f) != 9 {
 			t.Errorf("ln %d: expected a k q", ln)
-			t.Fatal("         got",lines[ln])
+			t.Fatal("         got", lines[ln])
 		}
-		if s := chkStr(e.A); s != f[1] {
-			t.Fatalf("ln %d: expected a = %s, got %s", ln, s, f[1])
+		if !chk(e.A, f[1]) {
+			t.Fatalf("ln %d: expected a = %s, got %.10f", ln, f[1], e.A)
 		}
-		if s := chkStr(e.K); s != f[4] {
-			t.Fatalf("ln %d: expected k = %s, got %s", ln, s, f[4])
+		if !chk(e.K, f[4]) {
+			t.Fatalf("ln %d: expected k = %s, got %.10f", ln, f[4], e.K)
 		}
-		if s := chkStr(e.Q); s != f[7] {
-			t.Fatalf("ln %d: expected q = %s, got %s", ln, s, f[7])
+		if !chk(e.Q, f[7]) {
+			t.Fatalf("ln %d: expected q = %s, got %.10f", ln, f[7], e.Q)
 		}
 		f = strings.Fields(lines[ln])
 		ln++
 		if len(f) != 9 {
 			t.Fatalf("ln %d: expected l h p got\n%s", ln, lines[ln])
 		}
-		if s := chkStr(e.L); s != f[1] {
-			t.Fatalf("ln %d: expected l = %s, got %s", ln, s, f[1])
+		if !chk(e.L, f[1]) {
+			t.Fatalf("ln %d: expected l = %s, got %.10f", ln, f[1], e.L)
 		}
-		if s := chkStr(e.H); s != f[4] {
-			t.Fatalf("ln %d: expected h = %s, got %s", ln, s, f[4])
+		if !chk(e.H, f[4]) {
+			t.Fatalf("ln %d: expected h = %s, got %.10f", ln, f[4], e.H)
 		}
-		if s := chkStr(e.P); s != f[7] {
-			t.Fatalf("ln %d: expected p = %s, got %s", ln, s, f[7])
+		if !chk(e.P, f[7]) {
+			t.Fatalf("ln %d: expected p = %s, got %.10f", ln, f[7], e.P)
 		}
 		ln++ // skip blank line
 	}
 }
 
-func chkStr(f float64) string {
-	switch s := fmt.Sprintf("%.10f", f); {
-	case s[0] == '0':
-		return s[1:]
-	case s[:2] == "-0":
-		return "-" + s[2:]
-	default:
-		return s
+func chk(f float64, s string) bool {
+	sf, err := strconv.ParseFloat(s, 64)
+	if err != nil {
+		return false
 	}
+	return math.Abs(f-sf) < 1e-10
 }

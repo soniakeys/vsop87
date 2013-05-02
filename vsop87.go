@@ -94,9 +94,15 @@ type abc struct {
 	a, b, c float64
 }
 
+type coeff [6][]abc
+
+type ellipticCoeff struct {
+	a, l, k, h, q, p coeff
+}
+
 type EllipticModel struct {
 	t [6]float64
-	c [nBodies][6][6][]abc
+	c [nBodies]ellipticCoeff
 }
 
 const (
@@ -147,7 +153,7 @@ func NewEllipticModel(path string, prec, tdj float64) (*EllipticModel, error) {
 				return nil, fmt.Errorf("Line %d: expected body %s, "+
 					"found %s.", n+1, b7[ibody], bo)
 			}
-			ic := line[41] - '0'
+			ic := line[41]
 			it := line[59] - '0'
 			in, err := strconv.Atoi(strings.TrimSpace(line[60:67]))
 			if err != nil {
@@ -189,13 +195,40 @@ func NewEllipticModel(path string, prec, tdj float64) (*EllipticModel, error) {
 				cx++
 				continue
 			parseError:
-				return nil, fmt.Errorf("Line%d: %v.", n+cx+1, err)
+				return nil, fmt.Errorf("Line %d: %v.", n+cx+1, err)
 			}
-			em.c[ibody][ic-1][it] = append([]abc{}, c[:cx]...)
+			switch ic {
+			case '1':
+				em.c[ibody].a[it] = append([]abc{}, c[:cx]...)
+			case '2':
+				em.c[ibody].l[it] = append([]abc{}, c[:cx]...)
+			case '3':
+				em.c[ibody].k[it] = append([]abc{}, c[:cx]...)
+			case '4':
+				em.c[ibody].h[it] = append([]abc{}, c[:cx]...)
+			case '5':
+				em.c[ibody].q[it] = append([]abc{}, c[:cx]...)
+			case '6':
+				em.c[ibody].p[it] = append([]abc{}, c[:cx]...)
+			default:
+				return nil,
+					fmt.Errorf("Line %d: invalid variable %c", n+cx+1, ic)
+			}
 			n += in
 		}
 	}
 	return em, nil
+}
+
+func (c *coeff) sum(ts *[6]float64) (r float64) {
+	for it, t := range c {
+		s := 0.
+		for _, term := range t {
+			s += term.a * math.Cos(term.b+term.c*ts[1])
+		}
+		r += s * ts[it]
+	}
+	return
 }
 
 func (em *EllipticModel) Pos(tdj float64, ibody int, r *Elliptic) {
@@ -205,30 +238,19 @@ func (em *EllipticModel) Pos(tdj float64, ibody int, r *Elliptic) {
 		em.t[i] = t * em.t[i-1]
 	}
 	cb := em.c[ibody]
-	r.A = em.sum(cb[0])
-	r.L = pmod(em.sum(cb[1]), 2*math.Pi)
-	r.K = em.sum(cb[2])
-	r.H = em.sum(cb[3])
-	r.Q = em.sum(cb[4])
-	r.P = em.sum(cb[5])
-}
-
-func (em *EllipticModel) sum(c [6][]abc) (r float64) {
-	for it, t := range c {
-		for _, term := range t {
-			u := term.b + term.c*em.t[1]
-			cu := math.Cos(u)
-			r += term.a * cu * em.t[it]
-		}
-	}
-	return
+	r.A = cb.a.sum(&em.t)
+	r.L = pmod(cb.l.sum(&em.t), 2*math.Pi)
+	r.K = cb.k.sum(&em.t)
+	r.H = cb.h.sum(&em.t)
+	r.Q = cb.q.sum(&em.t)
+	r.P = cb.p.sum(&em.t)
 }
 
 // copied from github.com/soniakeys/meeus/base/math.go
 func pmod(x, y float64) float64 {
-    r := math.Mod(x, y)
-    if r < 0 {
-        r += y
-    }
-    return r
+	r := math.Mod(x, y)
+	if r < 0 {
+		r += y
+	}
+	return r
 }
