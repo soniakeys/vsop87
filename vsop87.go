@@ -123,14 +123,13 @@ func NewEllipticModel(path string, prec, tdj float64) (*EllipticModel, error) {
 	if q < 3 {
 		q = 3
 	}
-	em := &EllipticModel{}
-	var at [6]float64 // abs of powers of t
+	at := make([]float64, 6) // powers of abs(t)
 	at[0] = 1
 	t := math.Abs(tdj-t2000) / a1000
 	for i := 1; i < 6; i++ {
 		at[i] = t * at[i-1]
 	}
-	var c [2047]abc
+	em := &EllipticModel{}
 	for _, ibody := range []int{Mercury, Venus, EarthMoon, Mars,
 		Jupiter, Saturn, Uranus, Neptune} {
 		data, err := ioutil.ReadFile(path + "/VSOP87." + ext[ibody])
@@ -138,86 +137,106 @@ func NewEllipticModel(path string, prec, tdj float64) (*EllipticModel, error) {
 			return nil, err
 		}
 		lines := strings.Split(string(data), "\n")
-		n := 0
-		dl := 0.
-		for n < len(lines) {
-			line := lines[n]
-			if len(line) < 132 {
-				break
-			}
-			if iv := line[17]; iv != '0' {
-				return nil, fmt.Errorf("Line %d: expected version 0, "+
-					"found %c.", n+1, iv)
-			}
-			if bo := line[22:29]; bo != b7[ibody] {
-				return nil, fmt.Errorf("Line %d: expected body %s, "+
-					"found %s.", n+1, b7[ibody], bo)
-			}
-			ic := line[41]
-			it := line[59] - '0'
-			in, err := strconv.Atoi(strings.TrimSpace(line[60:67]))
-			if err != nil {
-				return nil, fmt.Errorf("Line %d: %v.", n+1, err)
-			}
-			if in == 0 {
-				continue
-			}
-			if in > len(lines)-n {
-				return nil, errors.New("Unexpected end of file.")
-			}
-			d0 := at[it]
-			p := prec / 10 / (q - 2) / (d0 + float64(it)*dl*1e-4 + 1e-50)
-			p *= a0[ibody]
-			dl = d0
 
-			n++
-			cx := 0
-			for _, line := range lines[n : n+in] {
-				a := &c[cx]
-				a.a, err =
-					strconv.ParseFloat(strings.TrimSpace(line[79:97]), 64)
-				if err != nil {
-					goto parseError
-				}
-				if math.Abs(a.a) < p {
-					fmt.Println("truncated")
-					break
-				}
-				a.b, err = strconv.ParseFloat(line[98:111], 64)
-				if err != nil {
-					goto parseError
-				}
-				a.c, err =
-					strconv.ParseFloat(strings.TrimSpace(line[111:131]), 64)
-				if err != nil {
-					goto parseError
-				}
-				cx++
-				continue
-			parseError:
-				return nil, fmt.Errorf("Line %d: %v.", n+cx+1, err)
-			}
-			switch ic {
-			case '1':
-				em.c[ibody].a[it] = append([]abc{}, c[:cx]...)
-			case '2':
-				em.c[ibody].l[it] = append([]abc{}, c[:cx]...)
-			case '3':
-				em.c[ibody].k[it] = append([]abc{}, c[:cx]...)
-			case '4':
-				em.c[ibody].h[it] = append([]abc{}, c[:cx]...)
-			case '5':
-				em.c[ibody].q[it] = append([]abc{}, c[:cx]...)
-			case '6':
-				em.c[ibody].p[it] = append([]abc{}, c[:cx]...)
-			default:
-				return nil,
-					fmt.Errorf("Line %d: invalid variable %c", n+cx+1, ic)
-			}
-			n += in
+		n := 0
+		n, err = em.c[ibody].a.parse('1', ibody, lines, n, q, prec, at, true)
+		if err != nil {
+			return nil, err
+		}
+		n, err = em.c[ibody].l.parse('2', ibody, lines, n, q, prec, at, false)
+		if err != nil {
+			return nil, err
+		}
+		n, err = em.c[ibody].k.parse('3', ibody, lines, n, q, prec, at, false)
+		if err != nil {
+			return nil, err
+		}
+		n, err = em.c[ibody].h.parse('4', ibody, lines, n, q, prec, at, false)
+		if err != nil {
+			return nil, err
+		}
+		n, err = em.c[ibody].q.parse('5', ibody, lines, n, q, prec, at, false)
+		if err != nil {
+			return nil, err
+		}
+		n, err = em.c[ibody].p.parse('6', ibody, lines, n, q, prec, at, false)
+		if err != nil {
+			return nil, err
 		}
 	}
 	return em, nil
+}
+
+func (c *coeff) parse(ic byte, ibody int, lines []string, n int, q, prec float64, at []float64, au bool) (int, error) {
+	dl := 0.
+	var cbuf [2047]abc
+	for n < len(lines) {
+		line := lines[n]
+		if len(line) < 132 {
+			break
+		}
+		if line[41] != ic {
+			break
+		}
+		/*
+			if iv := line[17]; iv != '0' {
+				return n, fmt.Errorf("Line %d: expected version 0, "+
+					"found %c.", n+1, iv)
+			}
+		*/
+		if bo := line[22:29]; bo != b7[ibody] {
+			return n, fmt.Errorf("Line %d: expected body %s, "+
+				"found %s.", n+1, b7[ibody], bo)
+		}
+		it := line[59] - '0'
+		in, err := strconv.Atoi(strings.TrimSpace(line[60:67]))
+		if err != nil {
+			return n, fmt.Errorf("Line %d: %v.", n+1, err)
+		}
+		if in == 0 {
+			continue
+		}
+		if in > len(lines)-n {
+			return n, errors.New("Unexpected end of file.")
+		}
+		d0 := at[it]
+		p := prec / 10 / (q - 2) / (d0 + float64(it)*dl*1e-4 + 1e-50)
+		if au {
+			p *= a0[ibody]
+		}
+		dl = d0
+
+		n++
+		cx := 0
+		for _, line := range lines[n : n+in] {
+			a := &cbuf[cx]
+			a.a, err =
+				strconv.ParseFloat(strings.TrimSpace(line[79:97]), 64)
+			if err != nil {
+				goto parseError
+			}
+			if math.Abs(a.a) < p {
+				fmt.Println("truncated")
+				break
+			}
+			a.b, err = strconv.ParseFloat(line[98:111], 64)
+			if err != nil {
+				goto parseError
+			}
+			a.c, err =
+				strconv.ParseFloat(strings.TrimSpace(line[111:131]), 64)
+			if err != nil {
+				goto parseError
+			}
+			cx++
+			continue
+		parseError:
+			return n, fmt.Errorf("Line %d: %v.", n+cx+1, err)
+		}
+		c[it] = append([]abc{}, cbuf[:cx]...)
+		n += in
+	}
+	return n, nil
 }
 
 func (c *coeff) sum(ts *[6]float64) (r float64) {
