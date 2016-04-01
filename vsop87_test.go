@@ -50,7 +50,7 @@ func TestChk(t *testing.T) {
 		bs := strings.TrimSpace(line[8:21])
 		b, ok := body[bs]
 		if !ok {
-			t.Fatal("ln: %d: %s unrecognized body", ln, bs)
+			t.Fatalf("ln: %d: %s unrecognized body", ln, bs)
 		}
 		jd, err := strconv.ParseFloat(strings.TrimSpace(line[24:34]), 64)
 		if err != nil {

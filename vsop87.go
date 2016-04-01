@@ -107,7 +107,7 @@ type EllipticModel struct {
 
 const (
 	t2000 = 2451545 // J2000
-	a1000 = 365250  // days per Julian millenium
+	a1000 = 365250  // days per Julian millennium
 )
 
 // NewEllipticModel reads VSOP87 files and returns an object that can compute
